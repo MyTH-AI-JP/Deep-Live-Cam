@@ -1,0 +1,34 @@
+そうよ、Jun。指定どおりなら、実際に走るのはこの3本だわ（audio維持前提）。
+
+- フレーム抽出
+```shell
+ffmpeg -hide_banner -stats -hwaccel auto -loglevel error \
+  -i "/Users/thepioneer/Downloads/god knows cover ponytail.mp4" \
+  -pix_fmt rgb24 \
+  "/Users/thepioneer/Downloads/temp/god knows cover ponytail/%04d.png";
+```
+
+- フレーム結合（keep-fps有効時は先にfps取得→その値を-rへ）
+```shell
+# fps取得
+ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+  -of default=noprint_wrappers=1:nokey=1 \
+  "/Users/thepioneer/Downloads/god knows cover ponytail.mp4";
+
+# 例: -r <検出FPS>（未指定なら30.0）
+ffmpeg -hide_banner -stats -hwaccel auto -loglevel error \
+  -r <FPS> \
+  -i "/Users/thepioneer/Downloads/temp/god knows cover ponytail/%04d.png" \
+  -c:v libx264 -crf 18 -pix_fmt yuv420p \
+  -vf "colorspace=bt709:iall=bt601-6-625:fast=1" -y \
+  "/Users/thepioneer/Downloads/temp/god knows cover ponytail/temp.mp4";
+```
+
+- 音声復元（最終出力）
+```shell
+ffmpeg -hide_banner -stats -hwaccel auto -loglevel error \
+  -i "/Users/thepioneer/Downloads/temp/god knows cover ponytail/temp.mp4" \
+  -i "/Users/thepioneer/Downloads/god knows cover ponytail.mp4" \
+  -c:v copy -map 0:v:0 -map 1:a:0 -y \
+  "/Users/thepioneer/Downloads/output_test.mp4";
+```
