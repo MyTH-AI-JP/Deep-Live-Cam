@@ -50,6 +50,8 @@ def parse_args() -> None:
     program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int, default=suggest_max_memory())
     program.add_argument('--execution-provider', help='execution provider', dest='execution_provider', default=['cpu'], choices=suggest_execution_providers(), nargs='+')
     program.add_argument('--execution-threads', help='number of execution threads', dest='execution_threads', type=int, default=suggest_execution_threads())
+    program.add_argument('--det-thresh', help='face detection threshold (0-1, higher=stricter)', dest='det_thresh', type=float, default=0.5)
+    program.add_argument('--assign-sim', help='min cosine similarity to assign faces to clusters (0-1)', dest='assign_sim', type=float, default=0.6)
     program.add_argument('-v', '--version', action='version', version=f'{modules.metadata.name} {modules.metadata.version}')
 
     # register deprecated args
@@ -80,6 +82,8 @@ def parse_args() -> None:
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
     modules.globals.lang = args.lang
+    modules.globals.det_thresh = max(0.0, min(1.0, args.det_thresh))
+    modules.globals.assign_min_similarity = max(0.0, min(1.0, args.assign_sim))
 
     #for ENHANCER tumbler:
     if 'face_enhancer' in args.frame_processor:

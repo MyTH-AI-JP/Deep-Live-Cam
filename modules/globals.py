@@ -48,6 +48,10 @@ execution_threads: int | None = None # Number of threads for CPU execution
 headless: bool | None = None         # Run without UI?
 log_level: str = "error"             # Logging level (e.g., 'debug', 'info', 'warning', 'error')
 
+# Detection / Mapping thresholds
+det_thresh: float = 0.5               # InsightFace detection threshold (higher = stricter)
+assign_min_similarity: float = 0.6    # Min cosine similarity to assign face to a cluster
+
 # Face Processor UI Toggles (Example)
 fp_ui: Dict[str, bool] = {"face_enhancer": False}
 

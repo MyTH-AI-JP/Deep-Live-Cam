@@ -1,6 +1,6 @@
 import sys
 import importlib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, wait, FIRST_COMPLETED
 from types import ModuleType
 from typing import Any, List, Callable
 from tqdm import tqdm
@@ -67,13 +67,50 @@ def set_frame_processors_modules_from_ui(frame_processors: List[str]) -> None:
                  print(f"Warning: Error removing frame processor {frame_processor}: {e}")
 
 def multi_process_frame(source_path: str, temp_frame_paths: List[str], process_frames: Callable[[str, List[str], Any], None], progress: Any = None) -> None:
-    with ThreadPoolExecutor(max_workers=modules.globals.execution_threads) as executor:
-        futures = []
+    # Prevent end-of-run hangs by owning progress updates here and applying per-task timeouts
+    TASK_TIMEOUT_SECONDS = 120
+    executor = ThreadPoolExecutor(max_workers=modules.globals.execution_threads)
+    try:
+        future_to_path = {}
         for path in temp_frame_paths:
-            future = executor.submit(process_frames, source_path, [path], progress)
-            futures.append(future)
-        for future in futures:
-            future.result()
+            # Pass progress=None to avoid double-counting; we'll update progress in this function
+            future = executor.submit(process_frames, source_path, [path], None)
+            future_to_path[future] = path
+
+        remaining = set(future_to_path.keys())
+        while remaining:
+            done, not_done = wait(remaining, timeout=TASK_TIMEOUT_SECONDS, return_when=FIRST_COMPLETED)
+
+            # Handle completed futures
+            for f in list(done):
+                path = future_to_path.get(f)
+                try:
+                    f.result()  # propagate exceptions if any
+                except Exception as e:
+                    # Non-fatal: leave the original extracted frame as-is
+                    print(f"Warning: frame processing failed for {path}: {e}")
+                finally:
+                    if progress:
+                        progress.update(1)
+                    remaining.discard(f)
+
+            # If none completed within timeout, consider remaining as stalled and advance
+            if not done and not_done:
+                for f in list(not_done):
+                    path = future_to_path.get(f)
+                    # Best-effort cancel; running tasks may not cancel
+                    f.cancel()
+                    if progress:
+                        progress.update(1)
+                    remaining.discard(f)
+                break
+    finally:
+        # Do not wait on lingering tasks; cancel pending ones and return control
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            # For Python versions without cancel_futures
+            executor.shutdown(wait=False)
 
 
 def process_video(source_path: str, frame_paths: list[str], process_frames: Callable[[str, List[str], Any], None]) -> None:

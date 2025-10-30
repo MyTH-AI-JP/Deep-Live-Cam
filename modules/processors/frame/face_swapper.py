@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Dict, Tuple
 import cv2
 import insightface
 import threading
@@ -30,6 +30,12 @@ abs_dir = os.path.dirname(os.path.abspath(__file__))
 models_dir = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(abs_dir))), "models"
 )
+
+# --- Frame mapping indices to avoid O(N^2) scans per frame when map_faces is enabled ---
+# Maps frame path -> list of (source_face, target_face)
+FRAME_PAIR_INDEX: Dict[str, List[Tuple[Any, Any]]] = {}
+# Maps frame path -> list of target_face (for many_faces True using default source)
+FRAME_TARGET_FACES_INDEX: Dict[str, List[Any]] = {}
 
 def pre_check() -> bool:
     download_directory_path = abs_dir
@@ -320,7 +326,7 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
     swapped_face_bboxes = [] # Keep track of where swaps happened
 
     # Determine source/target pairs based on mode
-    source_target_pairs = []
+    source_target_pairs: List[Tuple[Any, Any]] = []
 
     # Ensure maps exist before accessing them
     souce_target_map = getattr(modules.globals, "souce_target_map", None)
@@ -332,48 +338,63 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
     if is_file_target:
         # Processing specific image or video file with pre-analyzed maps
         if souce_target_map:
-            if modules.globals.many_faces:
-                source_face = default_source_face() # Use default source for all targets
-                if source_face:
-                    for map_data in souce_target_map:
-                        if is_image(modules.globals.target_path):
+            # Fast path using pre-built indices when available (video)
+            if is_video(modules.globals.target_path) and temp_frame_path:
+                if modules.globals.many_faces:
+                    # Use default source for all faces detected for this frame
+                    source_face = default_source_face()
+                    if source_face:
+                        target_faces = FRAME_TARGET_FACES_INDEX.get(temp_frame_path)
+                        if target_faces is not None:
+                            for target_face in target_faces:
+                                source_target_pairs.append((source_face, target_face))
+                        else:
+                            # Fallback to legacy lookup if index missing
+                            for map_data in souce_target_map:
+                                target_frames_data = map_data.get("target_faces_in_frame", [])
+                                for frame_data in target_frames_data:
+                                    if frame_data and frame_data.get("location") == temp_frame_path:
+                                        for target_face in frame_data.get("faces", []):
+                                            source_target_pairs.append((source_face, target_face))
+                else:
+                    # Use precomputed (source, target) pairs for this frame
+                    pairs = FRAME_PAIR_INDEX.get(temp_frame_path)
+                    if pairs is not None:
+                        source_target_pairs.extend(pairs)
+                    else:
+                        # Fallback to legacy lookup if index missing
+                        for map_data in souce_target_map:
+                            source_info = map_data.get("source", {})
+                            source_face = source_info.get("face") if source_info else None
+                            if not source_face:
+                                continue
+                            target_frames_data = map_data.get("target_faces_in_frame", [])
+                            for frame_data in target_frames_data:
+                                if frame_data and frame_data.get("location") == temp_frame_path:
+                                    for target_face in frame_data.get("faces", []):
+                                        source_target_pairs.append((source_face, target_face))
+            else:
+                # Image targets: one-time mapping without index
+                if modules.globals.many_faces:
+                    source_face = default_source_face()
+                    if source_face:
+                        for map_data in souce_target_map:
                             target_info = map_data.get("target", {})
-                            if target_info: # Check if target info exists
+                            if target_info:
                                 target_face = target_info.get("face")
                                 if target_face:
                                     source_target_pairs.append((source_face, target_face))
-                        elif is_video(modules.globals.target_path):
-                             # Find faces for the current frame_path in video map
-                             target_frames_data = map_data.get("target_faces_in_frame", [])
-                             if target_frames_data: # Check if frame data exists
-                                 target_frames = [f for f in target_frames_data if f and f.get("location") == temp_frame_path]
-                                 for frame_data in target_frames:
-                                     faces_in_frame = frame_data.get("faces", [])
-                                     if faces_in_frame: # Check if faces exist
-                                         for target_face in faces_in_frame:
-                                             source_target_pairs.append((source_face, target_face))
-            else: # Single face or specific mapping
-                 for map_data in souce_target_map:
-                    source_info = map_data.get("source", {})
-                    if not source_info: continue # Skip if no source info
-                    source_face = source_info.get("face")
-                    if not source_face: continue # Skip if no source defined for this map entry
-
-                    if is_image(modules.globals.target_path):
+                else:
+                    for map_data in souce_target_map:
+                        source_info = map_data.get("source", {})
+                        source_face = source_info.get("face") if source_info else None
+                        if not source_face:
+                            continue
                         target_info = map_data.get("target", {})
                         if target_info:
-                           target_face = target_info.get("face")
-                           if target_face:
-                              source_target_pairs.append((source_face, target_face))
-                    elif is_video(modules.globals.target_path):
-                        target_frames_data = map_data.get("target_faces_in_frame", [])
-                        if target_frames_data:
-                           target_frames = [f for f in target_frames_data if f and f.get("location") == temp_frame_path]
-                           for frame_data in target_frames:
-                               faces_in_frame = frame_data.get("faces", [])
-                               if faces_in_frame:
-                                  for target_face in faces_in_frame:
-                                      source_target_pairs.append((source_face, target_face))
+                            target_face = target_info.get("face")
+                            if target_face:
+                                source_target_pairs.append((source_face, target_face))
 
     else:
         # Live stream or webcam processing (analyze faces on the fly)
@@ -395,8 +416,8 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
                           # More targets defined than detected - match each detected face
                           for detected_face in detected_faces:
                               if detected_face.normed_embedding is None: continue
-                              closest_idx, _ = find_closest_centroid(target_embeddings, detected_face.normed_embedding)
-                              if 0 <= closest_idx < len(source_faces):
+                              closest_idx, _ = find_closest_centroid(target_embeddings, detected_face.normed_embedding, getattr(modules.globals, 'assign_min_similarity', None))
+                              if closest_idx is not None and 0 <= closest_idx < len(source_faces):
                                   source_target_pairs.append((source_faces[closest_idx], detected_face))
                      else:
                           # More faces detected than targets defined - match each target embedding to closest detected face
@@ -406,8 +427,8 @@ def process_frame_v2(temp_frame: Frame, temp_frame_path: str = "") -> Frame:
 
                           for i, target_embedding in enumerate(target_embeddings):
                               if 0 <= i < len(source_faces): # Ensure source face exists for this embedding
-                                 closest_idx, _ = find_closest_centroid(detected_embeddings, target_embedding)
-                                 if 0 <= closest_idx < len(detected_faces_with_embedding):
+                                 closest_idx, _ = find_closest_centroid(detected_embeddings, target_embedding, getattr(modules.globals, 'assign_min_similarity', None))
+                                 if closest_idx is not None and 0 <= closest_idx < len(detected_faces_with_embedding):
                                      source_target_pairs.append((source_faces[i], detected_faces_with_embedding[closest_idx]))
             else: # Fallback: if no map, use default source for the single detected face (if any)
                 source_face = default_source_face()
@@ -609,6 +630,32 @@ def process_video(source_path: str, temp_frame_paths: List[str]) -> None:
     if getattr(modules.globals, "map_faces", False) and getattr(modules.globals, "many_faces", False):
         mode_desc += " and 'many_faces'. Using pre-analysis map."
     update_status(f"Processing video with {mode_desc} mode.", NAME)
+
+    # Build fast lookup indices once to avoid O(N^2) scans per frame when map_faces is enabled
+    if getattr(modules.globals, "map_faces", False):
+        try:
+            FRAME_PAIR_INDEX.clear()
+            FRAME_TARGET_FACES_INDEX.clear()
+            for map_data in getattr(modules.globals, "souce_target_map", []) or []:
+                # For many_faces False index (needs source per mapping)
+                src_info = map_data.get("source", {})
+                src_face = src_info.get("face") if src_info else None
+                frames_data = map_data.get("target_faces_in_frame", [])
+                for frame_data in frames_data:
+                    loc = frame_data.get("location") if frame_data else None
+                    if not loc:
+                        continue
+                    faces = frame_data.get("faces", [])
+                    # Populate target faces index for many_faces True
+                    if faces:
+                        lst = FRAME_TARGET_FACES_INDEX.setdefault(loc, [])
+                        lst.extend([f for f in faces if f is not None])
+                    # Populate (source, target) pairs for many_faces False only if source exists
+                    if src_face and faces:
+                        lstp = FRAME_PAIR_INDEX.setdefault(loc, [])
+                        lstp.extend([(src_face, f) for f in faces if f is not None])
+        except Exception as e:
+            print(f"Warning: Failed to build frame indices for map_faces: {e}")
 
     # Pass the correct source_path (needed for simple mode in process_frames)
     # The core processing logic handles calling the right frame function (process_frames)

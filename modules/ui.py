@@ -106,6 +106,8 @@ def save_switch_states():
         "show_fps": modules.globals.show_fps,
         "mouth_mask": modules.globals.mouth_mask,
         "show_mouth_mask_box": modules.globals.show_mouth_mask_box,
+        "det_thresh": getattr(modules.globals, "det_thresh", 0.5),
+        "assign_min_similarity": getattr(modules.globals, "assign_min_similarity", 0.6),
     }
     with open("switch_states.json", "w") as f:
         json.dump(switch_states, f)
@@ -130,6 +132,8 @@ def load_switch_states():
         modules.globals.show_mouth_mask_box = switch_states.get(
             "show_mouth_mask_box", False
         )
+        modules.globals.det_thresh = switch_states.get("det_thresh", getattr(modules.globals, "det_thresh", 0.5))
+        modules.globals.assign_min_similarity = switch_states.get("assign_min_similarity", getattr(modules.globals, "assign_min_similarity", 0.6))
     except FileNotFoundError:
         # If the file doesn't exist, use default values
         pass
@@ -403,7 +407,33 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
         border_width=1,
         corner_radius=3,
     )
-    transparency_slider.place(relx=0.35, rely=0.71, relwidth=0.5, relheight=0.02)
+    transparency_slider.place(relx=0.33, rely=0.71, relwidth=0.22, relheight=0.02)
+
+    # Detection threshold (right side)
+    det_thresh_var = ctk.DoubleVar(value=getattr(modules.globals, "det_thresh", 0.5))
+    def on_det_change(value: float):
+        modules.globals.det_thresh = float(value)
+        save_switch_states()
+        update_status(f"Det thresh set to {float(value):.2f}")
+
+    det_label = ctk.CTkLabel(root, text="Det thresh:")
+    det_label.place(relx=0.55, rely=0.69, relwidth=0.18, relheight=0.05)
+
+    det_slider = ctk.CTkSlider(
+        root,
+        from_=0.0,
+        to=1.0,
+        variable=det_thresh_var,
+        command=on_det_change,
+        fg_color="#E0E0E0",
+        progress_color="#007BFF",
+        button_color="#FFFFFF",
+        button_hover_color="#CCCCCC",
+        height=5,
+        border_width=1,
+        corner_radius=3,
+    )
+    det_slider.place(relx=0.73, rely=0.71, relwidth=0.22, relheight=0.02)
 
     # 3) Sharpness label & slider
     sharpness_var = ctk.DoubleVar(value=0.0)  # start at 0.0
@@ -428,7 +458,33 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
         border_width=1,
         corner_radius=3,
     )
-    sharpness_slider.place(relx=0.35, rely=0.76, relwidth=0.5, relheight=0.02)
+    sharpness_slider.place(relx=0.33, rely=0.76, relwidth=0.22, relheight=0.02)
+
+    # Assign similarity threshold (right side)
+    assign_sim_var = ctk.DoubleVar(value=getattr(modules.globals, "assign_min_similarity", 0.6))
+    def on_assign_change(value: float):
+        modules.globals.assign_min_similarity = float(value)
+        save_switch_states()
+        update_status(f"Assign sim set to {float(value):.2f}")
+
+    assign_label = ctk.CTkLabel(root, text="Assign sim:")
+    assign_label.place(relx=0.55, rely=0.74, relwidth=0.18, relheight=0.05)
+
+    assign_slider = ctk.CTkSlider(
+        root,
+        from_=0.0,
+        to=1.0,
+        variable=assign_sim_var,
+        command=on_assign_change,
+        fg_color="#E0E0E0",
+        progress_color="#007BFF",
+        button_color="#FFFFFF",
+        button_hover_color="#CCCCCC",
+        height=5,
+        border_width=1,
+        corner_radius=3,
+    )
+    assign_slider.place(relx=0.73, rely=0.76, relwidth=0.22, relheight=0.02)
 
     # Status and link at the bottom
     global status_label
@@ -504,6 +560,55 @@ def create_source_target_popup(
     )
     scrollable_frame.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
 
+    def on_bulk_sources_click():
+        # Allow selecting multiple source images and assign sequentially to rows without sources
+        from tkinter import filedialog
+        global source_label_dict, RECENT_DIRECTORY_SOURCE, img_ft
+        file_paths = filedialog.askopenfilenames(
+            title=_("select source images"),
+            initialdir=RECENT_DIRECTORY_SOURCE,
+            filetypes=[img_ft],
+        )
+        if not file_paths:
+            return
+        # Gather rows needing a source in ascending id order
+        pending_ids = [item["id"] for item in map if "source" not in item]
+        assign_pairs = list(zip(pending_ids, file_paths))
+        for button_num, source_path in assign_pairs:
+            try:
+                cv2_img = cv2.imread(source_path)
+                face = get_one_face(cv2_img)
+                if face:
+                    x_min, y_min, x_max, y_max = face["bbox"]
+                    map[button_num]["source"] = {
+                        "cv2": cv2_img[int(y_min): int(y_max), int(x_min): int(x_max)],
+                        "face": face,
+                    }
+                    image = Image.fromarray(
+                        cv2.cvtColor(map[button_num]["source"]["cv2"], cv2.COLOR_BGR2RGB)
+                    )
+                    image = image.resize(
+                        (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT), Image.LANCZOS
+                    )
+                    tk_image = ctk.CTkImage(image, size=image.size)
+                    # If label exists, replace; else create
+                    if button_num in source_label_dict:
+                        source_label_dict[button_num].configure(image=tk_image)
+                    else:
+                        source_image = ctk.CTkLabel(
+                            scrollable_frame,
+                            text=f"S-{button_num}",
+                            width=MAPPER_PREVIEW_MAX_WIDTH,
+                            height=MAPPER_PREVIEW_MAX_HEIGHT,
+                        )
+                        source_image.grid(row=button_num, column=1, padx=10, pady=10)
+                        source_image.configure(image=tk_image)
+                        source_label_dict[button_num] = source_image
+                else:
+                    update_pop_status("Face could not be detected in one of the uploads!")
+            except Exception:
+                update_pop_status("Failed to load one of the selected images!")
+
     def on_button_click(map, button_num):
         map = update_popup_source(scrollable_frame, map, button_num)
 
@@ -545,10 +650,15 @@ def create_source_target_popup(
     popup_status_label = ctk.CTkLabel(POPUP, text=None, justify="center")
     popup_status_label.grid(row=1, column=0, pady=15)
 
+    bulk_button = ctk.CTkButton(
+        POPUP, text=_("Bulk select source images"), command=lambda: on_bulk_sources_click()
+    )
+    bulk_button.grid(row=2, column=0, pady=5)
+
     close_button = ctk.CTkButton(
         POPUP, text=_("Submit"), command=lambda: on_submit_click(start)
     )
-    close_button.grid(row=2, column=0, pady=10)
+    close_button.grid(row=3, column=0, pady=10)
 
 
 def update_popup_source(
