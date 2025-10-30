@@ -52,6 +52,11 @@ log_level: str = "error"             # Logging level (e.g., 'debug', 'info', 'wa
 det_thresh: float = 0.5               # InsightFace detection threshold (higher = stricter)
 assign_min_similarity: float = 0.6    # Min cosine similarity to assign face to a cluster
 
+# Clustering configuration
+cluster_method: str = "elbow"         # 'elbow' or 'silhouette'
+cluster_max_k: int = 10               # Upper bound for K search
+cluster_min_cluster_size: int = 1     # Minimum total faces assigned across frames to keep a cluster
+
 # Face Processor UI Toggles (Example)
 fp_ui: Dict[str, bool] = {"face_enhancer": False}
 

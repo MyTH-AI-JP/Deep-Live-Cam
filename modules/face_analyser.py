@@ -119,7 +119,7 @@ def get_unique_faces_from_target_video() -> Any:
             frame_face_embeddings.append({'frame': i, 'faces': many_faces, 'location': temp_frame_path})
             i += 1
 
-        centroids = find_cluster_centroids(face_embeddings)
+        centroids = find_cluster_centroids(face_embeddings, getattr(modules.globals, 'cluster_max_k', None), getattr(modules.globals, 'cluster_method', None))
 
         for frame in frame_face_embeddings:
             for face in frame['faces']:
@@ -127,16 +127,19 @@ def get_unique_faces_from_target_video() -> Any:
                 if closest_centroid_index is not None:
                     face['target_centroid'] = closest_centroid_index
 
+        # Build per-cluster frame lists, then keep clusters meeting min size
+        cluster_min = getattr(modules.globals, 'cluster_min_cluster_size', 1)
         for i in range(len(centroids)):
-            modules.globals.souce_target_map.append({
-                'id' : i
-            })
-
             temp = []
+            total_faces = 0
             for frame in tqdm(frame_face_embeddings, desc=f"Mapping frame embeddings to centroids-{i}"):
-                temp.append({'frame': frame['frame'], 'faces': [face for face in frame['faces'] if face['target_centroid'] == i], 'location': frame['location']})
+                faces_i = [face for face in frame['faces'] if face.get('target_centroid') == i]
+                total_faces += len(faces_i)
+                temp.append({'frame': frame['frame'], 'faces': faces_i, 'location': frame['location']})
 
-            modules.globals.souce_target_map[i]['target_faces_in_frame'] = temp
+            if total_faces >= cluster_min:
+                modules.globals.souce_target_map.append({'id': len(modules.globals.souce_target_map)})
+                modules.globals.souce_target_map[-1]['target_faces_in_frame'] = temp
 
         # dump_faces(centroids, frame_face_embeddings)
         default_target_face()
@@ -146,23 +149,43 @@ def get_unique_faces_from_target_video() -> Any:
 
 def default_target_face():
     for map in modules.globals.souce_target_map:
+        # Guard: skip if no frames list
+        if 'target_faces_in_frame' not in map or not map['target_faces_in_frame']:
+            continue
+
         best_face = None
         best_frame = None
+        # Initialize best with first available face
         for frame in map['target_faces_in_frame']:
-            if len(frame['faces']) > 0:
-                best_face = frame['faces'][0]
+            faces_in_frame = frame.get('faces') or []
+            if len(faces_in_frame) > 0:
+                best_face = faces_in_frame[0]
                 best_frame = frame
                 break
 
+        # If none found (thresholding removed all), skip
+        if best_face is None or best_frame is None:
+            continue
+
+        # Pick highest det_score if available
         for frame in map['target_faces_in_frame']:
-            for face in frame['faces']:
-                if face['det_score'] > best_face['det_score']:
-                    best_face = face
-                    best_frame = frame
+            faces_in_frame = frame.get('faces') or []
+            for face in faces_in_frame:
+                try:
+                    if face.get('det_score', 0) > best_face.get('det_score', 0):
+                        best_face = face
+                        best_frame = frame
+                except AttributeError:
+                    pass
+
+        # Final guard before cropping
+        if best_face is None or best_frame is None or 'bbox' not in best_face:
+            continue
 
         x_min, y_min, x_max, y_max = best_face['bbox']
-
-        target_frame = cv2.imread(best_frame['location'])
+        target_frame = cv2.imread(best_frame.get('location', ''))
+        if target_frame is None or y_min >= y_max or x_min >= x_max:
+            continue
         map['target'] = {
                         'cv2' : target_frame[int(y_min):int(y_max), int(x_min):int(x_max)],
                         'face' : best_face
@@ -182,7 +205,7 @@ def dump_faces(centroids: Any, frame_face_embeddings: list):
 
             j = 0
             for face in frame['faces']:
-                if face['target_centroid'] == i:
+                if face.get('target_centroid') == i:
                     x_min, y_min, x_max, y_max = face['bbox']
 
                     if temp_frame[int(y_min):int(y_max), int(x_min):int(x_max)].size > 0:

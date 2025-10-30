@@ -52,6 +52,9 @@ def parse_args() -> None:
     program.add_argument('--execution-threads', help='number of execution threads', dest='execution_threads', type=int, default=suggest_execution_threads())
     program.add_argument('--det-thresh', help='face detection threshold (0-1, higher=stricter)', dest='det_thresh', type=float, default=0.5)
     program.add_argument('--assign-sim', help='min cosine similarity to assign faces to clusters (0-1)', dest='assign_sim', type=float, default=0.6)
+    program.add_argument('--cluster-method', help='clustering model selection method', dest='cluster_method', choices=['elbow','silhouette'], default='elbow')
+    program.add_argument('--cluster-max-k', help='max K to search for clustering', dest='cluster_max_k', type=int, default=10)
+    program.add_argument('--cluster-min-size', help='minimum faces per cluster to keep', dest='cluster_min_size', type=int, default=1)
     program.add_argument('-v', '--version', action='version', version=f'{modules.metadata.name} {modules.metadata.version}')
 
     # register deprecated args
@@ -84,6 +87,9 @@ def parse_args() -> None:
     modules.globals.lang = args.lang
     modules.globals.det_thresh = max(0.0, min(1.0, args.det_thresh))
     modules.globals.assign_min_similarity = max(0.0, min(1.0, args.assign_sim))
+    modules.globals.cluster_method = args.cluster_method
+    modules.globals.cluster_max_k = max(2, int(args.cluster_max_k))
+    modules.globals.cluster_min_cluster_size = max(1, int(args.cluster_min_size))
 
     #for ENHANCER tumbler:
     if 'face_enhancer' in args.frame_processor:

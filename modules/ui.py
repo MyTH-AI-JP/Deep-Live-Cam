@@ -108,6 +108,7 @@ def save_switch_states():
         "show_mouth_mask_box": modules.globals.show_mouth_mask_box,
         "det_thresh": getattr(modules.globals, "det_thresh", 0.5),
         "assign_min_similarity": getattr(modules.globals, "assign_min_similarity", 0.6),
+        "cluster_min_cluster_size": getattr(modules.globals, "cluster_min_cluster_size", 1),
     }
     with open("switch_states.json", "w") as f:
         json.dump(switch_states, f)
@@ -134,6 +135,7 @@ def load_switch_states():
         )
         modules.globals.det_thresh = switch_states.get("det_thresh", getattr(modules.globals, "det_thresh", 0.5))
         modules.globals.assign_min_similarity = switch_states.get("assign_min_similarity", getattr(modules.globals, "assign_min_similarity", 0.6))
+        modules.globals.cluster_min_cluster_size = switch_states.get("cluster_min_cluster_size", getattr(modules.globals, "cluster_min_cluster_size", 1))
     except FileNotFoundError:
         # If the file doesn't exist, use default values
         pass
@@ -314,21 +316,21 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     start_button = ctk.CTkButton(
         root, text=_("Start"), cursor="hand2", command=lambda: analyze_target(start, root)
     )
-    start_button.place(relx=0.15, rely=0.80, relwidth=0.2, relheight=0.05)
+    start_button.place(relx=0.15, rely=0.83, relwidth=0.2, relheight=0.05)
 
     stop_button = ctk.CTkButton(
         root, text=_("Destroy"), cursor="hand2", command=lambda: destroy()
     )
-    stop_button.place(relx=0.4, rely=0.80, relwidth=0.2, relheight=0.05)
+    stop_button.place(relx=0.4, rely=0.83, relwidth=0.2, relheight=0.05)
 
     preview_button = ctk.CTkButton(
         root, text=_("Preview"), cursor="hand2", command=lambda: toggle_preview()
     )
-    preview_button.place(relx=0.65, rely=0.80, relwidth=0.2, relheight=0.05)
+    preview_button.place(relx=0.65, rely=0.83, relwidth=0.2, relheight=0.05)
 
     # --- Camera Selection ---
     camera_label = ctk.CTkLabel(root, text=_("Select Camera:"))
-    camera_label.place(relx=0.1, rely=0.86, relwidth=0.2, relheight=0.05)
+    camera_label.place(relx=0.1, rely=0.89, relwidth=0.2, relheight=0.05)
 
     available_cameras = get_available_cameras()
     camera_indices, camera_names = available_cameras
@@ -347,7 +349,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             root, variable=camera_variable, values=camera_names
         )
 
-    camera_optionmenu.place(relx=0.35, rely=0.86, relwidth=0.25, relheight=0.05)
+    camera_optionmenu.place(relx=0.35, rely=0.89, relwidth=0.25, relheight=0.05)
 
     live_button = ctk.CTkButton(
         root,
@@ -367,7 +369,7 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             else "disabled"
         ),
     )
-    live_button.place(relx=0.65, rely=0.86, relwidth=0.2, relheight=0.05)
+    live_button.place(relx=0.65, rely=0.89, relwidth=0.2, relheight=0.05)
     # --- End Camera Selection ---
 
     # 1) Define a DoubleVar for transparency (0 = fully transparent, 1 = fully opaque)
@@ -460,6 +462,35 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     )
     sharpness_slider.place(relx=0.33, rely=0.76, relwidth=0.22, relheight=0.02)
 
+    # Cluster min size (below Sharpness)
+    cluster_min_var = ctk.DoubleVar(value=float(getattr(modules.globals, "cluster_min_cluster_size", 1)))
+    def on_cluster_min_change(value: float):
+        try:
+            modules.globals.cluster_min_cluster_size = max(1, int(float(value)))
+            save_switch_states()
+            update_status(f"Cluster min size set to {modules.globals.cluster_min_cluster_size}")
+        except Exception:
+            pass
+
+    cluster_min_label = ctk.CTkLabel(root, text="Cluster min size:")
+    cluster_min_label.place(relx=0.15, rely=0.79, relwidth=0.2, relheight=0.05)
+
+    cluster_min_slider = ctk.CTkSlider(
+        root,
+        from_=1.0,
+        to=50.0,
+        variable=cluster_min_var,
+        command=on_cluster_min_change,
+        fg_color="#E0E0E0",
+        progress_color="#007BFF",
+        button_color="#FFFFFF",
+        button_hover_color="#CCCCCC",
+        height=5,
+        border_width=1,
+        corner_radius=3,
+    )
+    cluster_min_slider.place(relx=0.33, rely=0.81, relwidth=0.22, relheight=0.02)
+
     # Assign similarity threshold (right side)
     assign_sim_var = ctk.DoubleVar(value=getattr(modules.globals, "assign_min_similarity", 0.6))
     def on_assign_change(value: float):
@@ -489,12 +520,12 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
     # Status and link at the bottom
     global status_label
     status_label = ctk.CTkLabel(root, text=None, justify="center")
-    status_label.place(relx=0.1, rely=0.9, relwidth=0.8)
+    status_label.place(relx=0.1, rely=0.92, relwidth=0.8)
 
     donate_label = ctk.CTkLabel(
         root, text="Deep Live Cam", justify="center", cursor="hand2"
     )
-    donate_label.place(relx=0.1, rely=0.95, relwidth=0.8)
+    donate_label.place(relx=0.1, rely=0.965, relwidth=0.8)
     donate_label.configure(
         text_color=ctk.ThemeManager.theme.get("URL").get("text_color")
     )
@@ -547,13 +578,25 @@ def create_source_target_popup(
     POPUP.title(_("Source x Target Mapper"))
     POPUP.geometry(f"{POPUP_WIDTH}x{POPUP_HEIGHT}")
     POPUP.focus()
+    # Ensure footer is always visible by reserving space at the bottom
+    try:
+        POPUP.grid_rowconfigure(0, weight=1)
+        POPUP.grid_rowconfigure(1, weight=0, minsize=120)
+        POPUP.grid_columnconfigure(0, weight=1)
+    except Exception:
+        pass
 
     def on_submit_click(start):
-        if has_valid_map():
+        # Allow start if at least one row has both a source and a target
+        try:
+            valid_count = sum(1 for item in map if isinstance(item, dict) and item.get("source") and item.get("target"))
+        except Exception:
+            valid_count = 0
+        if valid_count >= 1:
             POPUP.destroy()
             select_output_path(start)
         else:
-            update_pop_status("Atleast 1 source with target is required!")
+            update_pop_status("At least 1 source with target is required!")
 
     scrollable_frame = ctk.CTkScrollableFrame(
         POPUP, width=POPUP_SCROLL_WIDTH, height=POPUP_SCROLL_HEIGHT
@@ -632,12 +675,6 @@ def create_source_target_popup(
         )
         x_label.grid(row=id, column=2, padx=10, pady=10)
 
-        image = Image.fromarray(cv2.cvtColor(item["target"]["cv2"], cv2.COLOR_BGR2RGB))
-        image = image.resize(
-            (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT), Image.LANCZOS
-        )
-        tk_image = ctk.CTkImage(image, size=image.size)
-
         target_image = ctk.CTkLabel(
             scrollable_frame,
             text=f"T-{id}",
@@ -645,20 +682,38 @@ def create_source_target_popup(
             height=MAPPER_PREVIEW_MAX_HEIGHT,
         )
         target_image.grid(row=id, column=3, padx=10, pady=10)
-        target_image.configure(image=tk_image)
+        if "target" in item and isinstance(item["target"], dict) and item["target"].get("cv2") is not None:
+            image = Image.fromarray(cv2.cvtColor(item["target"]["cv2"], cv2.COLOR_BGR2RGB))
+            image = image.resize(
+                (MAPPER_PREVIEW_MAX_WIDTH, MAPPER_PREVIEW_MAX_HEIGHT), Image.LANCZOS
+            )
+            tk_image = ctk.CTkImage(image, size=image.size)
+            target_image.configure(image=tk_image)
+        else:
+            target_image.configure(text="No target")
 
-    popup_status_label = ctk.CTkLabel(POPUP, text=None, justify="center")
-    popup_status_label.grid(row=1, column=0, pady=15)
+    # Footer frame (fixed height) to keep controls visible
+    footer = ctk.CTkFrame(POPUP)
+    footer.grid(row=1, column=0, sticky="ew")
+    try:
+        footer.grid_columnconfigure(0, weight=1)
+        footer.grid_columnconfigure(1, weight=0)
+        footer.grid_columnconfigure(2, weight=0)
+    except Exception:
+        pass
+
+    popup_status_label = ctk.CTkLabel(footer, text=None, justify="center")
+    popup_status_label.grid(row=0, column=0, columnspan=3, pady=8, padx=10, sticky="ew")
 
     bulk_button = ctk.CTkButton(
-        POPUP, text=_("Bulk select source images"), command=lambda: on_bulk_sources_click()
+        footer, text=_("Bulk select source images"), command=lambda: on_bulk_sources_click()
     )
-    bulk_button.grid(row=2, column=0, pady=5)
+    bulk_button.grid(row=1, column=1, padx=10, pady=8, sticky="e")
 
     close_button = ctk.CTkButton(
-        POPUP, text=_("Submit"), command=lambda: on_submit_click(start)
+        footer, text=_("Submit"), command=lambda: on_submit_click(start)
     )
-    close_button.grid(row=3, column=0, pady=10)
+    close_button.grid(row=1, column=2, padx=10, pady=8, sticky="e")
 
 
 def update_popup_source(

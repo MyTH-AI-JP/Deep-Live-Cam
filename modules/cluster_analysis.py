@@ -2,23 +2,42 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from typing import Any
+import modules.globals
 
 
-def find_cluster_centroids(embeddings, max_k=10) -> Any:
-    inertia = []
-    cluster_centroids = []
-    K = range(1, max_k+1)
+def find_cluster_centroids(embeddings, max_k: int | None = None, method: str | None = None) -> Any:
+    if embeddings is None or len(embeddings) == 0:
+        return []
+    X = np.array(embeddings)
+    n_samples = len(X)
+    max_k = max_k or getattr(modules.globals, 'cluster_max_k', 10)
+    max_k = max(2, min(max_k, n_samples))
+    method = method or getattr(modules.globals, 'cluster_method', 'elbow')
 
-    for k in K:
-        kmeans = KMeans(n_clusters=k, random_state=0)
-        kmeans.fit(embeddings)
-        inertia.append(kmeans.inertia_)
-        cluster_centroids.append({"k": k, "centroids": kmeans.cluster_centers_})
+    candidates = list(range(2, max_k + 1))
+    models = []
+    inertias = []
+    silhouettes = []
 
-    diffs = [inertia[i] - inertia[i+1] for i in range(len(inertia)-1)]
-    optimal_centroids = cluster_centroids[diffs.index(max(diffs)) + 1]['centroids']
+    for k in candidates:
+        km = KMeans(n_clusters=k, random_state=0)
+        km.fit(X)
+        models.append(km)
+        inertias.append(km.inertia_)
+        try:
+            silhouettes.append(silhouette_score(X, km.labels_))
+        except Exception:
+            silhouettes.append(-1.0)
 
-    return optimal_centroids
+    chosen_idx = 0
+    if method == 'silhouette' and any(s > -1.0 for s in silhouettes):
+        chosen_idx = int(np.argmax(silhouettes))
+    else:
+        # Elbow: choose largest drop in inertia
+        diffs = [inertias[i] - inertias[i+1] for i in range(len(inertias)-1)] if len(inertias) > 1 else [0]
+        chosen_idx = int(np.argmax(diffs)) + 1 if len(diffs) > 0 else 0
+
+    return models[chosen_idx].cluster_centers_
 
 def find_closest_centroid(centroids: list, normed_face_embedding, min_similarity: float | None = None) -> list:
     try:
