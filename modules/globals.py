@@ -47,6 +47,7 @@ execution_providers: List[str] = []  # e.g., ['CUDAExecutionProvider', 'CPUExecu
 execution_threads: int | None = None # Number of threads for CPU execution
 headless: bool | None = None         # Run without UI?
 log_level: str = "error"             # Logging level (e.g., 'debug', 'info', 'warning', 'error')
+ui_ready: bool = False               # True after UI widgets are initialized
 
 # Detection / Mapping thresholds
 det_thresh: float = 0.5               # InsightFace detection threshold (higher = stricter)
@@ -56,6 +57,16 @@ assign_min_similarity: float = 0.6    # Min cosine similarity to assign face to 
 cluster_method: str = "elbow"         # 'elbow' or 'silhouette'
 cluster_max_k: int = 10               # Upper bound for K search
 cluster_min_cluster_size: int = 1     # Minimum total faces assigned across frames to keep a cluster
+
+# Nano Banana (Gemini) preprocessing
+enable_nano_banana: bool = True
+nano_banana_user_override: bool = False  # True if user explicitly set enable/disable via CLI
+nano_banana_on_target: bool = False   # Apply to target image (videos are skipped)
+nano_banana_model: str = "gemini-2.5-flash-image"
+nano_banana_prompt: str = (
+    "Remove all the bangs, fringe, and sideburns, caps, hats, and any kind of headwear so the forehead is fully visible while keeping the rest of the image unchanged. "
+    "Preserve lighting, color tone, background, identity, and facial features clearly and in detail. Perform natural inpainting."
+)
 
 # Face Processor UI Toggles (Example)
 fp_ui: Dict[str, bool] = {"face_enhancer": False}

@@ -1,4 +1,5 @@
 import os
+import tempfile
 import webbrowser
 import customtkinter as ctk
 from typing import Callable, Tuple
@@ -27,7 +28,7 @@ from modules.utilities import (
 )
 from modules.video_capture import VideoCapturer
 from modules.gettext import LanguageManager
-from modules import globals
+from modules.nano_banana import preprocess_image_with_gemini
 import platform
 
 if platform.system() == "Windows":
@@ -87,6 +88,12 @@ def init(start: Callable[[], None], destroy: Callable[[], None], lang: str) -> c
     _ = lang_manager._
     ROOT = create_root(start, destroy)
     PREVIEW = create_preview(ROOT)
+
+    # Mark UI as ready so core can safely send UI updates
+    try:
+        modules.globals.ui_ready = True
+    except Exception:
+        pass
 
     return ROOT
 
@@ -469,8 +476,8 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
             modules.globals.cluster_min_cluster_size = max(1, int(float(value)))
             save_switch_states()
             update_status(f"Cluster min size set to {modules.globals.cluster_min_cluster_size}")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[NanoBanana][select_target] Exception: {e}")
 
     cluster_min_label = ctk.CTkLabel(root, text="Cluster min size:")
     cluster_min_label.place(relx=0.15, rely=0.79, relwidth=0.2, relheight=0.05)
@@ -587,6 +594,7 @@ def create_source_target_popup(
         pass
 
     def on_submit_click(start):
+        # No preprocessing here; it runs in core.start() after output path selection
         # Allow start if at least one row has both a source and a target
         try:
             valid_count = sum(1 for item in map if isinstance(item, dict) and item.get("source") and item.get("target"))
@@ -626,6 +634,7 @@ def create_source_target_popup(
                     map[button_num]["source"] = {
                         "cv2": cv2_img[int(y_min): int(y_max), int(x_min): int(x_max)],
                         "face": face,
+                        "path": source_path,
                     }
                     image = Image.fromarray(
                         cv2.cvtColor(map[button_num]["source"]["cv2"], cv2.COLOR_BGR2RGB)
@@ -744,6 +753,7 @@ def update_popup_source(
             map[button_num]["source"] = {
                 "cv2": cv2_img[int(y_min): int(y_max), int(x_min): int(x_max)],
                 "face": face,
+                "path": source_path,
             }
 
             image = Image.fromarray(
@@ -1200,6 +1210,37 @@ def create_source_target_popup_for_webcam(
     POPUP_LIVE.focus()
 
     def on_submit_click():
+        # Force Nano Banana preprocessing on all sources before live preview submit
+        try:
+            if getattr(modules.globals, "enable_nano_banana", False):
+                total = sum(1 for item in map if isinstance(item, dict) and item.get("source") and item["source"].get("cv2") is not None)
+                done = 0
+                print(f"[NanoBanana][live_submit] Start preprocessing {total} source(s)...")
+                for item in map:
+                    if isinstance(item, dict) and item.get("source") and item["source"].get("cv2") is not None:
+                        try:
+                            update_pop_live_status("Nano Banana: finalizing source preprocessing...")
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                                tmp_path = tmp.name
+                            cv2.imwrite(tmp_path, item["source"]["cv2"])
+                            nb = preprocess_image_with_gemini(
+                                tmp_path,
+                                getattr(modules.globals, "nano_banana_prompt", ""),
+                                getattr(modules.globals, "nano_banana_model", "gemini-2.5-flash-image"),
+                            )
+                            if nb:
+                                cv_nb = cv2.imread(nb)
+                                face_nb = get_one_face(cv_nb)
+                                if face_nb:
+                                    x_min, y_min, x_max, y_max = face_nb["bbox"]
+                                    item["source"]["cv2"] = cv_nb[int(y_min): int(y_max), int(x_min): int(x_max)]
+                                    item["source"]["face"] = face_nb
+                                    done += 1
+                        except Exception:
+                            pass
+                print(f"[NanoBanana][live_submit] Completed {done}/{total} source(s)")
+        except Exception as e:
+            print(f"[NanoBanana][webcam_target] Exception: {e}")
         if has_valid_map():
             simplify_maps()
             update_pop_live_status("Mappings successfully submitted!")
@@ -1359,6 +1400,7 @@ def update_webcam_source(
             map[button_num]["source"] = {
                 "cv2": cv2_img[int(y_min): int(y_max), int(x_min): int(x_max)],
                 "face": face,
+                "path": source_path,
             }
 
             image = Image.fromarray(

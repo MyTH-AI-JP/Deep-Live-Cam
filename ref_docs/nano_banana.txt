@@ -1,0 +1,415 @@
+ このページは Cloud Translation API によって翻訳されました。
+Switch to English
+ホーム
+Gemini API
+Gemini API ドキュメント
+この情報は役に立ちましたか？
+
+フィードバックを送信Gemini を使った画像生成（別名 Nano Banana）
+
+content_copy
+
+
+
+Gemini は、会話形式で画像を生成して処理できます。テキスト、画像、またはその両方を組み合わせて Gemini にプロンプトを入力すると、これまでにない制御でビジュアルを作成、編集、反復処理できます。
+
+Text-to-Image: シンプルなテキストの説明から複雑なテキストの説明まで、高品質の画像を生成します。
+画像 + テキストから画像（編集）: 画像を指定し、テキスト プロンプトを使用して要素の追加、削除、変更、スタイルの変更、カラー グレーディングの調整を行います。
+マルチ画像から画像へ（構図とスタイルの変換）: 複数の入力画像を使用して新しいシーンを構成したり、ある画像のスタイルを別の画像に変換したりします。
+反復的な調整: 会話を通じて、画像を複数回にわたって徐々に調整し、完璧になるまで小さな調整を繰り返します。
+高忠実度のテキスト レンダリング: ロゴ、図、ポスターなどに最適な、読みやすく配置されたテキストを含む画像を正確に生成します。
+すべての生成画像には SynthID の透かしが埋め込まれています。
+
+画像生成（テキスト画像変換）
+次のコードは、説明的なプロンプトに基づいて画像を生成する方法を示しています。
+
+Python
+JavaScript
+Go
+REST
+
+from google import genai
+from google.genai import types
+from PIL import Image
+from io import BytesIO
+
+client = genai.Client()
+
+prompt = (
+    "Create a picture of a nano banana dish in a fancy restaurant with a Gemini theme"
+)
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash-image",
+    contents=[prompt],
+)
+
+for part in response.candidates[0].content.parts:
+    if part.text is not None:
+        print(part.text)
+    elif part.inline_data is not None:
+        image = Image.open(BytesIO(part.inline_data.data))
+        image.save("generated_image.png")
+ナノバナナ料理の AI 生成画像
+Gemini をテーマにしたレストランで提供されるナノバナナ料理の AI 生成画像
+画像編集（テキストと画像による画像変換）
+リマインダー: アップロードする画像に関する必要な権利をすべて所有していることをご確認ください。他者の権利を侵害するコンテンツ（他人を欺く、嫌がらせをする、または危害を加える動画や画像など）を生成しないでください。この生成 AI 機能の使用は、Google の生成 AI の使用禁止に関するポリシーの対象となります。
+
+次の例は、base64 でエンコードされた画像をアップロードする方法を示しています。複数の画像、大きなペイロード、サポートされている MIME タイプについては、画像認識のページをご覧ください。
+
+Python
+JavaScript
+Go
+REST
+
+from google import genai
+from google.genai import types
+from PIL import Image
+from io import BytesIO
+
+client = genai.Client()
+
+prompt = (
+    "Create a picture of my cat eating a nano-banana in a "
+    "fancy restaurant under the Gemini constellation",
+)
+
+image = Image.open("/path/to/cat_image.png")
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash-image",
+    contents=[prompt, image],
+)
+
+for part in response.candidates[0].content.parts:
+    if part.text is not None:
+        print(part.text)
+    elif part.inline_data is not None:
+        image = Image.open(BytesIO(part.inline_data.data))
+        image.save("generated_image.png")
+バナナを食べている猫の AI 生成画像
+ナノバナナを食べる猫の AI 生成画像
+その他の画像生成モード
+Gemini は、プロンプトの構造とコンテキストに基づいて、次のような他の画像操作モードをサポートしています。
+
+テキスト画像変換とテキスト（インターリーブ）: 関連するテキストを含む画像を出力します。
+プロンプトの例: 「パエリアのレシピをイラスト付きで生成してください。」
+画像とテキスト画像変換とテキスト（インターリーブ）: 入力画像とテキストを使用して、関連する新しい画像とテキストを作成します。
+プロンプトの例:（家具付きの部屋の画像を提示して）「この部屋に合いそうなソファの色には他にどんなものがありますか？画像を更新してください」。
+マルチターン画像編集（チャット）: 会話形式で画像を生成、編集し続けます。
+プロンプトの例: [青い車の画像をアップロードして] 「この車をコンバーチブルにしてください」「次に、色を黄色に変えてください」。
+プロンプトのガイドと戦略
+Gemini 2.5 Flash Image Generation を使いこなすには、次の基本原則から始めます。
+
+キーワードを列挙するだけでなく、シーンを説明します。このモデルの強みは、言語を深く理解していることです。物語や説明文の段落は、ほとんどの場合、関連性のない単語のリストよりも、より優れた一貫性のある画像を生成します。
+
+画像を生成するためのプロンプト
+次の戦略は、探している画像を正確に生成するための効果的なプロンプトを作成するのに役立ちます。
+
+1. フォトリアリスティックなシーン
+リアルな画像の場合は、写真用語を使用します。カメラアングル、レンズの種類、照明、細部などを指定して、モデルを写真のようにリアルな結果に導きます。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+A photorealistic [shot type] of [subject], [action or expression], set in
+[environment]. The scene is illuminated by [lighting description], creating
+a [mood] atmosphere. Captured with a [camera/lens details], emphasizing
+[key textures and details]. The image should be in a [aspect ratio] format.
+日本の高齢の陶芸家のリアルなクローズアップ ポートレート...
+日本の高齢の陶芸家のリアルなクローズアップ ポートレート...
+2. スタイルを適用したイラストとステッカー
+ステッカー、アイコン、アセットを作成する場合は、スタイルを明確に指定し、背景を透明にするようリクエストします。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+A [style] sticker of a [subject], featuring [key characteristics] and a
+[color palette]. The design should have [line style] and [shading style].
+The background must be transparent.
+幸せそうな赤い...
+幸せそうなレッサーパンダの kawaii スタイルのステッカー...
+3. 画像内の正確なテキスト
+Gemini はテキストのレンダリングに優れています。テキスト、フォント スタイル（説明）、全体的なデザインを明確にしてください。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Create a [image type] for [brand/concept] with the text "[text to render]"
+in a [font style]. The design should be [style description], with a
+[color scheme].
+「The Daily Grind」というコーヒー ショップのモダンでミニマルなロゴを作成してください。 「The Daily Grind」というコーヒー ショップのモダンでミニマルなロゴを作成して...
+4. 商品のモックアップと広告写真
+e コマース、広告、ブランディング用のクリーンでプロフェッショナルな商品写真を撮影するのに最適です。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+A high-resolution, studio-lit product photograph of a [product description]
+on a [background surface/description]. The lighting is a [lighting setup,
+e.g., three-point softbox setup] to [lighting purpose]. The camera angle is
+a [angle type] to showcase [specific feature]. Ultra-realistic, with sharp
+focus on [key detail]. [Aspect ratio].
+ミニマルなセラミック製コーヒー マグのスタジオ照明による高解像度の商品写真...
+ミニマリストのセラミック製コーヒー マグのスタジオ照明による高解像度の商品写真...
+5. ミニマルでネガティブ スペースを活かしたデザイン
+テキストを重ねて表示するウェブサイト、プレゼンテーション、マーケティング資料の背景の作成に最適です。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+A minimalist composition featuring a single [subject] positioned in the
+[bottom-right/top-left/etc.] of the frame. The background is a vast, empty
+[color] canvas, creating significant negative space. Soft, subtle lighting.
+[Aspect ratio].
+1 枚の繊細な紅葉の葉をフィーチャーしたミニマルな構図...
+1 枚の繊細な紅葉の葉をフィーチャーしたミニマリストの構図...
+6. 連続するアート（コミック パネル / ストーリーボード）
+キャラクターの一貫性とシーンの説明に基づいて、ビジュアル ストーリーテリング用のパネルを作成します。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+A single comic book panel in a [art style] style. In the foreground,
+[character description and action]. In the background, [setting details].
+The panel has a [dialogue/caption box] with the text "[Text]". The lighting
+creates a [mood] mood. [Aspect ratio].
+ざらざらしたノワール アート スタイルの漫画本の一コマ...
+ざらざらしたノワール アート スタイルのコミックブックの 1 つのパネル...
+画像を編集するためのプロンプト
+これらの例は、編集、構図、スタイル転送のテキスト プロンプトとともに画像を提供する方法を示しています。
+
+1. 要素の追加と削除
+画像を提供し、変更内容を説明します。モデルは、元の画像のスタイル、照明、遠近法と一致します。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Using the provided image of [subject], please [add/remove/modify] [element]
+to/from the scene. Ensure the change is [description of how the change should
+integrate].
+入力
+
+出力
+
+ふわふわの茶色の猫のリアルな写真。
+ふわふわした茶色の猫のリアルな写真...
+提供した猫の画像を使用して、小さな編み物の魔法使いの帽子を追加してください。
+提供された猫の画像を使用して、小さな編み物の魔法使いの帽子を追加してください。
+2. インペイント（セマンティック マスク）
+会話形式で「マスク」を定義して、画像の特定の部分を編集し、残りの部分はそのままにします。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Using the provided image, change only the [specific element] to [new
+element/description]. Keep everything else in the image exactly the same,
+preserving the original style, lighting, and composition.
+入力
+
+出力
+
+明るく照らされたモダンなリビングルームのワイドショット。
+明るく照らされたモダンなリビングルームのワイドショット...
+提供されたリビングルームの画像を使用して、青いソファだけをヴィンテージの茶色の革製チェスターフィールド ソファに変更してください。
+提供されたリビングルームの画像を使用して、青いソファだけをヴィンテージの茶色の革張りのチェスターフィールド ソファに変更してください。
+3. 画風変換
+画像を提供し、別の芸術的なスタイルでコンテンツを再作成するようモデルに指示します。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Transform the provided photograph of [subject] into the artistic style of [artist/art style]. Preserve the original composition but render it with [description of stylistic elements].
+入力
+
+出力
+
+にぎやかな街の通りのリアルな高解像度写真...
+賑やかな街並みの写真のようにリアルな高解像度の写真...
+夜の現代的な街並みの写真が提供されました。この写真を...
+夜の現代的な街並みの写真を提供します。この写真を...
+4. 高度な合成: 複数の画像を組み合わせる
+複数の画像をコンテキストとして提供し、新しい複合シーンを作成します。商品モックアップやクリエイティブなコラージュに最適です。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Create a new image by combining the elements from the provided images. Take
+the [element from image 1] and place it with/on the [element from image 2].
+The final image should be a [description of the final scene].
+入力 1
+
+入力 2
+
+出力
+
+青い花柄の夏のワンピースのプロが撮影した写真...
+青い花柄の夏のドレスのプロが撮影した写真...
+髪を束ねた女性の全身写真...
+髪を束ねた女性の全身ショット...
+プロフェッショナルな e コマースのファッション写真を生成して...
+プロフェッショナルな e コマース ファッション写真を作成して...
+5. 高忠実度のディテールの保持
+編集時に重要な詳細（顔やロゴなど）が保持されるように、編集リクエストとともに詳細な説明を記載してください。
+
+テンプレート
+プロンプト
+Python
+JavaScript
+Go
+REST
+
+Using the provided images, place [element from image 2] onto [element from
+image 1]. Ensure that the features of [element from image 1] remain
+completely unchanged. The added element should [description of how the
+element should integrate].
+入力 1
+
+入力 2
+
+出力
+
+茶色の髪と青い目の女性のプロフェッショナルな顔写真...
+茶色の髪と青い目の女性のビジネス用のプロフィール写真...
+「G」と「A」の文字が入ったシンプルでモダンなロゴ...
+「G」と「A」の文字を使ったシンプルでモダンなロゴ...
+茶色の髪、青い目、無表情の女性の最初の画像を取得します。
+茶色の髪、青い目、無表情の女性の最初の画像を撮影して...
+ベスト プラクティス
+結果を優れたものにするには、次のプロフェッショナルな戦略をワークフローに組み込みます。
+
+詳細に指定する: 詳細に指定するほど、より細かく制御できます。「ファンタジー アーマー」ではなく、「銀の葉の模様がエッチングされた、高い襟とハヤブサの翼の形をした肩当てが付いた、精巧なエルフのプレート アーマー」のように説明します。
+背景と意図を説明する: 画像の目的を説明します。モデルのコンテキストの理解が最終出力に影響します。たとえば、「高級感のあるミニマリストのスキンケア ブランドのロゴを作成して」と入力すると、「ロゴを作成して」と入力するよりも良い結果が得られます。
+反復処理と改良: 最初の試行で完璧な画像が生成されるとは限りません。モデルの会話的な性質を利用して、小さな変更を行います。「素晴らしいですが、照明をもう少し暖かくしてもらえますか？」や「すべてそのままにして、キャラクターの表情をもう少し真剣なものに変えてください」などのプロンプトでフォローアップします。
+ステップバイステップの手順を使用する: 多くの要素を含む複雑なシーンでは、プロンプトをステップに分割します。「まず、夜明けの静かで霧がかった森の背景を作成します。次に、前景に苔むした古代の石の祭壇を追加します。最後に、祭壇の上に光る剣を 1 本置きます。」
+「セマンティック ネガティブ プロンプト」を使用する: 「車がない」と言う代わりに、「交通の兆候がない空っぽの寂れた通り」のように、望ましいシーンを肯定的に説明します。
+カメラを制御する: 写真や映画の用語を使用して、構図を制御します。wide-angle shot、macro shot、low-angle perspective などの用語。
+制限事項
+最高のパフォーマンスを実現するには、EN、es-MX、ja-JP、zh-CN、hi-IN のいずれかの言語を使用してください。
+画像生成では、音声や動画の入力はサポートされていません。
+モデルは、ユーザーが明示的にリクエストした画像出力の数を正確に守るとは限りません。
+モデルは、入力として最大 3 枚の画像を使用する場合に最適に動作します。
+画像のテキストを生成する場合、Gemini は、まずテキストを生成してから、そのテキストを含む画像をリクエストすると、最適な結果が得られます。
+現在、EEA、スイス、英国では、子供の画像をアップロードすることはできません。
+すべての生成画像には SynthID の透かしが埋め込まれています。
+オプションの構成
+必要に応じて、generate_content 呼び出しの config フィールドで、モデルの出力のレスポンス モダリティとアスペクト比を構成できます。
+
+出力形式
+モデルはデフォルトでテキストと画像の両方のレスポンス（response_modalities=['Text', 'Image']）を返します。response_modalities=['Image'] を使用すると、テキストなしで画像のみを返すようにレスポンスを構成できます。
+
+Python
+JavaScript
+Go
+REST
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash-image",
+    contents=[prompt],
+    config=types.GenerateContentConfig(
+        response_modalities=['Image']
+    )
+)
+アスペクト比
+デフォルトでは、出力画像のサイズは入力画像のサイズに一致します。それ以外の場合は、1:1 の正方形が生成されます。レスポンス リクエストの image_config の aspect_ratio フィールドを使用して、出力画像のアスペクト比を制御できます。
+
+Python
+JavaScript
+Go
+REST
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash-image",
+    contents=[prompt],
+    config=types.GenerateContentConfig(
+        image_config=types.ImageConfig(
+            aspect_ratio="16:9",
+        )
+    )
+)
+使用可能なさまざまな比率と生成される画像のサイズは、次の表のとおりです。
+
+アスペクト比	解決策	トークン
+1:1	1024 x 1024	1290
+2:3	832x1248	1290
+3:2	1248x832	1290
+3:4	864x1184	1290
+4:3	1184x864	1290
+4:5	896x1152	1290
+5:4	1152x896	1290
+9:16	768x1344	1290
+16:9	1344x768	1290
+21:9	1536x672	1290
+Imagen を使用する場面
+Gemini の組み込みの画像生成機能に加えて、Gemini API を介して、Google の専用画像生成モデルである Imagen にアクセスすることもできます。
+
+属性	Imagen	Gemini ネイティブ画像
+強み	これまでで最も高性能な画像生成モデル。写実的な画像、鮮明な画像、スペルとタイポグラフィの改善におすすめします。	デフォルトの推奨事項。
+比類のない柔軟性、コンテキストに沿った理解、シンプルでマスクフリーの編集。マルチターンの会話型編集を独自に実現。
+対象	一般提供	プレビュー（本番環境での使用が許可されている）
+レイテンシ	低。ほぼリアルタイムのパフォーマンス向けに最適化されています。	比較的長い。高度な機能にはより多くの計算が必要です。
+費用	特定のタスクに費用対効果が高い。$0.02/画像～ $0.12/画像	トークンベースの料金。画像出力 100 万トークンあたり $30（画像出力は画像あたり 1,290 トークンでトークン化されます。最大 1,024×1,024 ピクセル）
+おすすめのタスク	
+画質、フォトリアリズム、芸術的なディテール、特定のスタイル（印象派、アニメなど）を最優先にしたい場合。
+ブランディング、スタイル、ロゴや商品デザインの生成。
+高度なスペルやタイポグラフィを生成する。
+テキストと画像をシームレスにブレンドする、インターリーブされたテキストと画像の生成。
+1 つのプロンプトで複数の画像のクリエイティブ要素を組み合わせます。
+画像に非常に具体的な編集を加えたり、簡単な言語コマンドで個々の要素を変更したり、画像を繰り返し操作したりできます。
+元の被写体の形やディテールを保持しながら、ある画像の特定のデザインや質感を別の画像に適用します。
+Imagen 4 は、Imagen での画像生成を開始する際に使用するモデルです。高度なユースケースや、最高の画質が必要な場合は、Imagen 4 Ultra を選択します（一度に 1 枚の画像しか生成できません）。
+
+次のステップ
+その他の例とコードサンプルについては、クックブック ガイドをご覧ください。
+Gemini API を使用して動画を生成する方法については、Veo ガイドをご覧ください。
+Gemini モデルの詳細については、Gemini モデルをご覧ください。
+この情報は役に立ちましたか？
+
+フィードバックを送信
+特に記載のない限り、このページのコンテンツはクリエイティブ・コモンズの表示 4.0 ライセンスにより使用許諾されます。コードサンプルは Apache 2.0 ライセンスにより使用許諾されます。詳しくは、Google Developers サイトのポリシーをご覧ください。Java は Oracle および関連会社の登録商標です。
+
+最終更新日 2025-10-27 UTC。
+
+利用規約
+プライバシー
+Cookie を管理
